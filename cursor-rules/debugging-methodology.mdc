@@ -1,0 +1,164 @@
+---
+description: Systematic debugging and bug fixing methodology for any codebase
+globs: 
+alwaysApply: true
+---
+
+# Bug Fix Methodology — Mandatory Workflow
+
+When fixing any bug, you MUST follow this structured process. DO NOT skip steps.
+
+## Phase 0: Learn from Past Cases (ALWAYS DO THIS FIRST)
+
+Before any debugging, read the case study log at `~/.claude/skills/debugging/references/case-studies.md`.
+- Search for bugs with similar symptoms, components, or platforms
+- If a similar case exists, check what hypotheses were WRONG and what the actual root cause was
+- This prevents repeating known mistakes
+
+## Phase 1: Understand Before Acting
+
+### Step 1 — Reproduce & Observe
+- Confirm the exact symptoms: what is the user seeing? On which platform(s)?
+- Distinguish between: **data missing**, **data present but not rendered**, **UI layout broken**, **logic error**
+- If the bug is platform-specific (e.g., mobile only), ask WHY that platform differs — screen size? rendering engine? state sync? navigation lifecycle?
+
+### Step 2 — Classify the Bug Layer
+Determine which layer the bug lives in BEFORE writing any fix:
+
+| Layer | Signals | Debugging approach |
+|-------|---------|-------------------|
+| **Data / API** | API returns wrong data, missing fields, wrong format | Log raw API response, check request params |
+| **State** | State store is empty, stale, or not updating | Log state value at read point, check if writes happen |
+| **UI / Layout** | Data exists but not visible, overflow, wrong positioning | Add visible border to elements, check container constraints |
+| **Logic / Filter** | Wrong items shown, incorrect sorting, missing conditions | Trace the filter/map/sort chain, log intermediate results |
+| **Platform** | Works on one platform but not another | Compare platform-specific code paths, check environment flags |
+
+### Step 3 — Search for Existing Patterns
+Before writing new code, ALWAYS search the codebase for similar implementations:
+- Use `Grep` / `SemanticSearch` to find components that solve similar problems
+- Look for reusable hooks, utilities, or components that already handle the pattern you need
+- If a similar component exists elsewhere, extract and reuse it rather than reimplementing
+
+## Phase 2: Diagnose Root Cause
+
+### Step 4 — Verify with Evidence (NOT Assumptions)
+- Add targeted logging or use debugger to confirm your hypothesis
+- NEVER assume "the state probably isn't syncing" — verify by logging the value
+- NEVER assume "the data isn't there" — log it and check
+- For UI issues: temporarily add a colored border to confirm the element exists and check its dimensions
+
+### Step 5 — Two-Strike Rule
+- If your first fix attempt doesn't work, STOP and re-examine your assumptions
+- If your second fix attempt doesn't work, you MUST:
+  1. Go back to Step 2 and reclassify the bug
+  2. Add more logging to narrow down the exact failure point
+  3. Search for similar bugs/fixes in git history (`git log --all --oneline | grep "keyword"`)
+  4. Consider asking for help or pairing with another developer
+- NEVER make a 3rd attempt based on the same hypothesis
+
+## Phase 3: Implement the Fix
+
+### Step 6 — Fix Principles
+- Fix the root cause, not the symptom
+- Prefer extracting reusable components/hooks over one-off fixes
+- Keep the fix minimal — don't refactor unrelated code in the same commit
+- For cross-platform bugs: ensure the fix works on ALL affected platforms
+
+### Step 6.5 — Async State Flow Analysis (if code involves multiple data sources)
+Before writing any code that depends on async data loading, you MUST:
+1. **List all data sources** the component/hook depends on (atoms, API calls, server config)
+2. **Trace the loading order**: Which loads first? What is the initial value before load?
+3. **Distinguish "not loaded" from "empty"**: If the initial value is `[]` or `{}`, can you tell it apart from "loaded but empty"? If not, use `null` or `undefined` as the initial value.
+4. **Map every combination**: What happens when Source A is loaded but Source B isn't? What about the reverse? What about both empty?
+5. **Test edge cases**: Persisted state + fresh load, server removes previously valid data, network failure.
+
+**Common pitfall**: Using `array.length > 0` as a proxy for "data has loaded" — this breaks when the server legitimately returns an empty array.
+
+### Step 7 — Cross-Platform Awareness Checklist (if applicable)
+Before submitting a fix that touches shared UI code, verify:
+- [ ] Does the component render correctly on narrow screens (mobile)?
+- [ ] Does the component handle dynamic/variable-length content?
+- [ ] Is scrolling needed for content that might overflow?
+- [ ] Are interactions correct across platforms (touch vs mouse)?
+- [ ] **DIFF desktop vs mobile implementations side by side** — verify that filtering, sorting, and validation logic is identical across platforms unless intentionally different
+
+### Step 7.5 — React Reference Stability Checklist
+Before committing any React code, scan for these anti-patterns:
+- [ ] No `?? []` or `?? {}` inline in render — wrap with `useMemo` or extract to module-level constant
+- [ ] No `{}` as default prop value inline — use module-level `const EMPTY_OBJ = {}` or `EMPTY_STYLE`
+- [ ] No `[] as const` or `[]` as default inline in render — same treatment
+- [ ] All `useMemo`/`useCallback` dependency arrays are correct and consistent across platform variants
+- [ ] No new object/array creation in render path that feeds into downstream hooks' dependency arrays
+
+## Phase 4: Verify Before Committing
+
+### Step 8 — Verification Checklist
+- [ ] Bug is fixed on the original platform where it was reported
+- [ ] No regression on other platforms
+- [ ] **`yarn tsc:staged` passes** — no new type errors (NEVER skip this)
+- [ ] **`yarn lint:staged` passes** — no new lint errors (NEVER skip this)
+- [ ] Removed all debug logging
+- [ ] If the fix touches state: verify state values are correct
+- [ ] If the fix touches UI layout: visually confirm on smallest supported screen size
+- [ ] If the fix touches async data: tested with slow network / delayed loading
+
+### Step 8.5 — Anti Fix-on-Fix Rule
+Before committing a fix, ask yourself:
+- Does this fix introduce a NEW edge case? (e.g., "I changed initial value to handle loading, but now what happens when data is legitimately empty?")
+- If you cannot confidently answer "no", STOP and trace through all states again (Step 6.5)
+- If you already have 2+ fix commits stacked on the same code, STOP, revert to the original, and redesign holistically instead of patching incrementally
+
+### Step 9 — Commit Message Format
+```
+fix(scope): concise description of root cause fix
+
+- Root cause: [explain the actual root cause in one sentence]
+- Fix: [explain what was changed and why]
+- Affected platforms: [list platforms]
+```
+
+## Phase 5: Record What You Learned
+
+After every non-trivial bug fix, APPEND a case study to `~/.claude/skills/debugging/references/case-studies.md`:
+
+```
+## Case NNN: [Short Title]
+
+**Date**: YYYY-MM-DD  |  **Project**: [project name]  |  **Platforms**: [affected]
+
+### Symptom
+[One sentence]
+
+### Wrong Hypotheses (if any)
+| # | Hypothesis | Why Wrong |
+|---|-----------|-----------|
+
+### Root Cause
+[Layer + what was actually wrong]
+
+### Fix
+[What was done]
+
+### Lessons
+- ...
+
+### Tags
+`tag1` `tag2`
+```
+
+This is how the debugging system gets smarter over time. Every case you record helps avoid the same mistake in the future.
+
+## Anti-Patterns — NEVER Do These
+
+- ❌ **Trial-and-error commits**: Making multiple quick fix attempts without understanding the root cause
+- ❌ **Assumption-driven fixes**: "The state probably isn't syncing" without logging to confirm
+- ❌ **Copy-paste across platforms**: Different platforms have different constraints (screen size, touch, scrolling)
+- ❌ **Fixing symptoms**: e.g., forcing a state refresh when the real issue is a UI overflow
+- ❌ **Ignoring existing patterns**: Reimplementing something that already exists in the codebase
+- ❌ **Committing untested fixes**: Every fix must be visually/functionally verified before commit
+- ❌ **Skipping Phase 0 and Phase 5**: Not reading past cases = repeating mistakes; not recording = knowledge lost
+- ❌ **Fix-on-fix chains**: Applying a fix that creates a new edge case, then fixing that edge case with another patch. If you reach 2+ stacked fixes on the same code, revert and redesign holistically.
+- ❌ **Skipping tsc/lint before push**: ALWAYS run `yarn tsc:staged` and `yarn lint:staged` before pushing. Type errors and lint errors should NEVER be caught by CI or reviewers.
+- ❌ **Using array.length / object keys as "loaded" proxy**: `[] ` can mean "not loaded" or "empty". Use `null`/`undefined` for "not loaded" and `[]` for "loaded but empty".
+- ❌ **Inline `?? []` or `?? {}` in render paths**: These create new references every render, breaking React memoization. Use module-level constants or `useMemo`.
+- ❌ **Writing platform-specific logic without diffing both platforms**: When implementing the same feature on desktop and mobile, ALWAYS diff the two implementations side by side before committing.

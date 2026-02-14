@@ -1,0 +1,242 @@
+---
+description: Structured feature development workflow — from requirements to code review
+globs: 
+alwaysApply: true
+---
+
+# Feature Development Methodology — Mandatory Workflow
+
+When implementing any new feature or requirement, you MUST follow this structured process. DO NOT skip phases.
+
+## Phase 0: Clarify Intent (ALWAYS DO THIS FIRST)
+
+Before writing any code, understand what you are building:
+
+- Read the user's requirement carefully. Distinguish between: **new feature**, **enhancement to existing feature**, **UI change**, **refactor**
+- If the requirement is vague or has multiple interpretations, ask ONE clarifying question at a time (prefer multiple-choice)
+- Search the codebase for similar implementations — reuse existing patterns, hooks, and components rather than reinventing
+
+**NEVER start coding before you can answer:**
+1. What is the expected behavior?
+2. Which platforms are affected? (desktop / mobile / web / extension — or all?)
+3. What existing code can be reused?
+4. What is the blast radius? (Which modules, pages, or flows could be affected by this change?)
+
+## Phase 1: Explore & Design (for non-trivial features)
+
+Skip this phase ONLY for trivial changes (< 3 files, single-purpose, obvious approach).
+
+### Step 1 — Search for Existing Patterns
+
+Before writing new code, ALWAYS search the codebase:
+- Use `Grep` / `SemanticSearch` to find components solving similar problems
+- Look for reusable hooks, utilities, or components
+- If a similar component exists elsewhere, extract and reuse it rather than reimplementing
+
+### Step 2 — Cross-Platform Impact Analysis
+
+**MANDATORY for any code touching shared packages (`shared`, `components`, `kit`, `kit-bg`):**
+
+| Check | How |
+|---|---|
+| Which platforms consume this code? | Trace imports: who imports this file/component? |
+| Are there platform-specific variants? | Check for `.native.ts`, `.web.ts`, `.desktop.ts`, `.ext.ts` siblings |
+| Does the UI work on all screen sizes? | Consider mobile (narrowest), tablet, desktop (widest) |
+| Does the behavior differ by platform? | Check `platformEnv` usages in surrounding code |
+
+**If the change touches shared code, you MUST explicitly state:**
+- "This change affects: [list platforms]"
+- "This change does NOT affect: [list platforms], because [reason]"
+
+### Step 3 — Architecture Rationality Check
+
+**STOP and ask yourself before designing the solution:**
+
+1. **Why this approach?** — Can you articulate WHY this is the right place to solve this problem? If you cannot, you don't understand the problem well enough.
+2. **Should this be client-side or server-side?** — If the logic involves data aggregation, filtering, or validation that the server already has context for, it likely belongs on the server. Don't duplicate server logic on the client.
+3. **Am I building on a wrong foundation?** — If the existing code is heading in the wrong direction (e.g., client-side workarounds for what should be a server API, duplicated state that should be unified), DO NOT pile more logic on top. Flag it to the user: "The current approach has [issue]. I recommend [alternative] instead of extending the current pattern."
+4. **Is this the simplest solution that works?** — If you need more than 2 levels of indirection, the design is probably wrong.
+
+**Never extend a broken architecture.** If the foundation is wrong, propose fixing the foundation first.
+
+### Step 4 — Propose Approaches
+
+For features with meaningful trade-offs:
+- Propose 2-3 approaches with pros/cons
+- Lead with your recommended option and explain why
+- Consider: complexity, reusability, cross-platform impact, performance
+- Apply YAGNI — remove unnecessary scope ruthlessly
+
+### Step 5 — Confirm Before Implementing
+
+Present the design to the user in concise sections:
+- Architecture: which files to create/modify
+- Data flow: where data comes from, how it transforms
+- Reusable pieces: what can be extracted as shared components/hooks
+- Cross-platform: which platforms are affected and how
+- Get user confirmation before proceeding
+
+## Phase 2: Plan the Implementation
+
+### Step 6 — Break Down Into Tasks
+
+Create a structured task list using TodoWrite:
+- Each task should be a single, focused change (one component, one hook, one file)
+- Order tasks by dependency (shared utilities first, then consumers)
+- Identify what is shared/reusable vs. feature-specific
+
+### Step 7 — Identify Shared Code Upfront
+
+**BEFORE writing any feature code, ask yourself:**
+
+| Question | Action |
+|---|---|
+| Will this logic be used in multiple places? | Extract to a shared hook/utility |
+| Does a similar component already exist? | Reuse or extend it |
+| Is this a common UI pattern in the codebase? | Follow the existing pattern exactly |
+| Can this be composed from existing building blocks? | Compose, don't create from scratch |
+
+## Phase 3: Implement
+
+### Step 8 — Respect Project-Level Constraints
+
+**This rule is project-agnostic. ALWAYS check and follow workspace-level rules first.**
+
+When working in a monorepo or multi-package project, verify BEFORE writing code:
+
+**Import Hierarchy:** Does the project enforce import direction rules? (e.g., `shared` → `components` → `kit`). Never create circular dependencies. If unsure, check the project's architecture docs or `CLAUDE.md`.
+
+**i18n:** Does the project use translation keys? If so:
+- Never hardcode user-facing strings — use the project's i18n system
+- Never modify auto-generated translation/locale files
+
+**Restricted Patterns:** Check if the project forbids certain APIs or import paths. Follow them strictly.
+
+**Security:** For projects handling sensitive data (crypto, auth, payments):
+- Never log sensitive data (keys, tokens, seeds)
+- Never commit secrets or credentials
+- Follow the project's established security patterns
+
+### Step 9 — Code Quality Principles (MANDATORY)
+
+Every line of code you write MUST follow these rules:
+
+**Conciseness:**
+- Functions should do ONE thing and be short (< 40 lines preferred)
+- No duplicate code — extract shared logic into functions, hooks, or constants
+- If you copy-paste code, STOP and extract a shared component
+- Remove dead code, unused variables, unnecessary comments
+
+**Reference Stability (React):**
+- NO inline `?? []`, `?? {}`, or `new Object()` in render paths — use module-level constants
+- NO new object/array creation in render paths that feed into dependency arrays
+- All `useMemo`/`useCallback` dependency arrays must be correct
+
+**Naming:**
+- Semantic, self-documenting names: `fetchUser`, `isLoading`, `handleSubmit`
+- NO vague names: `tmp`, `data1`, `doStuff`, `handleClick2`
+- All comments in English
+
+**Cross-Platform Implementation:**
+- Use platform extensions (`.native.ts`, `.web.ts`, `.desktop.ts`, `.ext.ts`) for platform-specific code
+- Keep common logic in the base file, platform-specific code in extensions
+- Use the project's platform detection utility (e.g., `platformEnv`) instead of hardcoded checks
+- Use the project's responsive/adaptive layout system for screen size adaptation
+- When implementing the same feature on desktop and mobile, ALWAYS diff the two implementations side by side before finishing
+
+### Step 10 — Implement Incrementally
+
+For each task:
+1. Mark as `in_progress`
+2. Write the implementation
+3. Check for duplicate logic — extract if found
+4. Verify the change works
+5. Mark as `completed`
+6. Move to next task
+
+**Two-Strike Rule for Implementation:**
+- If your first approach creates too much complexity, STOP and simplify
+- If you find yourself adding workarounds, STOP and rethink the design
+- Prefer deleting code over adding code
+
+## Phase 4: Quality Gate (MANDATORY — NEVER SKIP)
+
+### Step 11 — Self-Review: Code Quality
+
+**Conciseness:**
+- [ ] No function > 40 lines without good reason
+- [ ] No duplicated logic — all shared code extracted
+- [ ] No dead code, unused imports, or commented-out code
+- [ ] No unnecessary abstraction layers
+
+**Correctness:**
+- [ ] All new code has correct TypeScript types (no `any`, no `@ts-ignore`)
+- [ ] All async operations properly awaited or prefixed with `void`
+- [ ] Error cases handled appropriately
+
+**Consistency:**
+- [ ] Follows existing codebase patterns and conventions
+- [ ] Uses existing shared components/hooks where available
+- [ ] Naming is consistent with surrounding code
+
+### Step 12 — Self-Review: Business Logic & Impact Scope
+
+**MANDATORY — Think through these questions BEFORE presenting the result:**
+
+**Business Logic Verification:**
+- [ ] Does the implementation match the original requirement? Re-read the requirement and compare
+- [ ] Are there edge cases not covered? (empty data, null values, loading states, error states)
+- [ ] Does the data flow make sense end-to-end? (API → state → UI)
+- [ ] Could this introduce a regression in existing behavior? If yes, what and where?
+
+**Cross-Platform Impact:**
+- [ ] If shared code was modified: verified it doesn't break other platforms
+- [ ] If platform-specific code was added: verified other platforms still work without it
+- [ ] If UI was changed: verified it renders correctly on mobile, tablet, and desktop widths
+- [ ] If navigation/routing was changed: verified deep links and back navigation still work
+
+**Module Impact:**
+- [ ] List all files modified — are any shared by other features?
+- [ ] If a shared hook/utility was modified: who else uses it? Could they break?
+- [ ] If a type definition was changed: are all consumers updated?
+- [ ] If state atoms were modified: what else reads/writes them?
+
+**Could this introduce bugs?**
+- [ ] Race conditions: async operations that might conflict
+- [ ] Stale closures: callbacks capturing outdated state
+- [ ] Memory leaks: subscriptions or listeners not cleaned up
+- [ ] Infinite loops: useEffect dependencies that trigger re-renders
+
+### Step 13 — Lint & Type Check
+
+- [ ] `ReadLints` shows no new errors on modified files
+- [ ] If the user requests, run `yarn lint:staged` — must pass
+- [ ] If the user requests, run `yarn tsc:staged` — must pass
+
+### Step 14 — Present the Result
+
+Summarize to the user:
+1. **What was implemented** (1-2 sentences)
+2. **Files modified/created** (list)
+3. **Reused components** — what existing code was leveraged
+4. **Impact scope** — which platforms/modules are affected, which are NOT affected
+5. **Risk assessment** — any areas that might need manual verification or testing
+6. **Architecture notes** — if you noticed any structural issues worth addressing in the future
+
+## Anti-Patterns — NEVER Do These
+
+- ❌ **Code first, think later**: Starting to write code before understanding the requirement
+- ❌ **Copy-paste across files**: Duplicating logic instead of extracting shared functions
+- ❌ **Ignoring existing patterns**: Creating new components when similar ones exist in the codebase
+- ❌ **Over-engineering**: Adding abstraction layers, config systems, or generic frameworks for one-off features
+- ❌ **Skipping the search**: Not searching for existing implementations before writing new code
+- ❌ **Inline object literals in render**: `style={{}}`, `?? []`, `?? {}` in JSX — use module-level constants
+- ❌ **Vague naming**: `handleClick`, `data`, `info`, `temp` — use semantic names
+- ❌ **Giant PRs**: Touching 20+ files when 5 would suffice — keep changes minimal and focused
+- ❌ **Skipping lint/tsc**: ALWAYS check for lint errors after edits. NEVER leave new warnings
+- ❌ **Non-English comments**: All comments must be written in English
+- ❌ **Default exports**: Always use named exports for components
+- ❌ **Piling on broken architecture**: If the existing approach is fundamentally wrong, DO NOT extend it — propose fixing the foundation first
+- ❌ **Ignoring cross-platform impact**: Modifying shared code without checking which platforms consume it
+- ❌ **Skipping business logic review**: Completing code without thinking through whether it could introduce regressions or affect other modules
+- ❌ **Client-side workarounds for server-side problems**: If the root cause belongs on the server, don't patch it on the client
